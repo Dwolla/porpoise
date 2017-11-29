@@ -1,10 +1,11 @@
 @GrabConfig(systemClassLoader=true)
 @Grapes([
 	@Grab(group='com.h2database', module='h2', version='1.3.170'),
-	@Grab(group='net.sourceforge.jtds', module='jtds', version='1.2.4')
+	@Grab(group='net.sourceforge.jtds', module='jtds', version='1.2.4'),
+	@Grab(group='com.microsoft.sqlserver', module='mssql-jdbc', version='6.2.1.jre8')
 ])
 
-final VERSION = "1.11"
+final VERSION = "1.12"
 println '''
                                          __
                                      _.-~  )
@@ -63,7 +64,11 @@ if (!scriptDirectory.exists()) {
 	System.exit(0)
 }
 
-sql = Sql.newInstance(dbUrl, dbUser, dbPassword, 'net.sourceforge.jtds.jdbc.Driver')
+isJtds = dbUrl.startsWith('jdbc:jtds:')
+def driverName = isJtds ? 'net.sourceforge.jtds.jdbc.Driver' : 'com.microsoft.sqlserver.jdbc.SQLServerDriver'
+println "Using driver \"${driverName}\" to connect to database"
+
+sql = Sql.newInstance(dbUrl, dbUser, dbPassword, driverName)
 
 databaseProduct = sql.connection.metaData.databaseProductName
 println "Connected to a \"${databaseProduct}\" database"
@@ -185,14 +190,18 @@ def timestampType(def dbMetaData) {
 	}
 }
 
+def getTextField(field) {
+	return isJtds ? field.asciiStream.text : field 
+}
+
 def determineScriptsToRun() {
 	def scripts = []
 	sql.eachRow("select * from porp_schema_log") { appliedScript ->
 		scripts.add([
 			changeset:appliedScript.changeset,
 			script:appliedScript.script_name,
-			up:appliedScript.up_script.asciiStream.text,
-			down:appliedScript.down_script.asciiStream.text,
+			up:getTextField(appliedScript.up_script),
+			down:getTextField(appliedScript.down_script),
 			md5:appliedScript.md5,
 			needsUp:false,
 			needsDown:true, //initially expect not to be present. Will be checked later
